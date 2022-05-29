@@ -43,8 +43,7 @@ and the intertemporal equilibrium quantity is:
 ```math
 Q^{*} = \alpha - \beta \frac{\alpha + \gamma}{\beta + \delta}
 ```
-Beware that if $\delta > \beta$, the price trajectory will be explosive.
-Furthermore, if$\delta = \beta$ the price dynamics will be oscillating ad infinitum, the only case where the price dynamics converge is when $\delta < \beta$.
+Beware that if $\delta > \beta$, the price trajectory will be explosive. Furthermore, if$\delta = \beta$ the price dynamics will be oscillating ad infinitum, the only case where the price dynamics converge is when $\delta < \beta$.
 
 As Alpha Chiang exemplifies:
 
@@ -53,7 +52,7 @@ As Alpha Chiang exemplifies:
 
 ## The code:
 
-I made one function `lin_cobweb()`, where you put $`\alpha, \beta, \gamma, \delta`$, and the initial price $`P_{0}`$, furthermore, you can set the number of iterations (`iter`) to make, and the tolerance (`tol`), to get the iteration number. 
+I made one function `lin_cobweb()`, where you put $\alpha, \beta, \gamma, \delta$, and the initial price $P_{0}$, furthermore, you can set the number of iterations (`iter`) to make, and the tolerance (`tol`), to get the iteration number. 
 
 So if you input in R this:
 
