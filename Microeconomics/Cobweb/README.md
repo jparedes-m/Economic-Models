@@ -28,7 +28,13 @@ Normalizing that as a difference equation:
 P_{t+1} + \frac{\delta}{\beta}P_{t} = \frac{\alpha + \gamma}{\beta}
 ```
 
-Where the solution is:
+Where the price dynamics are:
 ```math
 P_{t} = \left(P_{0} - \frac{\alpha + \gamma}{\beta + \delta}\right)\cdot \left(-\frac{\delta}{\beta}\right)^{t}+\frac{\alpha + \gamma}{\beta + \delta}
 ```
+
+However, the intertemporal equilibrium price is defined as:
+```math
+\bar{P}=\frac{\alpha + \gamma}{\beta + \delta}
+```
+
