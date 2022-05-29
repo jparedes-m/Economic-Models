@@ -32,14 +32,46 @@ Where the price dynamics are:
 ```math
 P_{t} = \left(P_{0} - \frac{\alpha + \gamma}{\beta + \delta}\right)\cdot \left(-\frac{\delta}{\beta}\right)^{t}+\frac{\alpha + \gamma}{\beta + \delta}
 ```
+where $`P_{0}`$ is the initial price.
 
 However, the intertemporal equilibrium price is defined as:
 ```math
-\bar{P}=\frac{\alpha + \gamma}{\beta + \delta}
+P^{*}=\frac{\alpha + \gamma}{\beta + \delta}
 ```
 and the intertemporal equilibrium quantity is:
 
 ```math
-\bar{Q} = \alpha - \beta \frac{\alpha + \gamma}{\beta + \delta}
+Q^{*} = \alpha - \beta \frac{\alpha + \gamma}{\beta + \delta}
 ```
+Beware that if $`\delta > \beta`$, the price trajectory will be explosive,  and if $`\delta = \beta`$ the price dynamics will be oscillating ad infinitum, the only case where the price dynamics converge is when $`\delta < \beta`$.
+
+As Alpha Chiang exemplifies:
+
+![image](https://user-images.githubusercontent.com/103344273/170894992-2d449b55-2908-4b41-9faf-ff2c74d4823f.png)
+
+
+## The code:
+
+I made one function `lin_cobweb()`, where you put $`\alpha, \beta, \gamma, \delta`$, and the initial price $`P_{0}`$, furthermore, you can set the number of iterations (`iter`) to make, and the tolerance (`tol`), to get the iteration number. 
+
+So if you input in R this:
+
+```
+lin_cobweb(alpha = 18, beta = 3, gamma = 3, delta = 2, p0 =2, iter=100)
+```
+this would be the results:
+
+```
+ Results of the Cobweb Model: 
+ ------------------------------ 
+ Intertemporal Equilibrium Price: 4.2 
+ Intertemporal Equilibrium Quantity: 5.4 
+This model converges at price and quantity at the 39 iteration 
+```
+
+![image](https://user-images.githubusercontent.com/103344273/170894885-8610e7e0-2edb-4de6-8258-db61a0559a18.png)
+![image](https://user-images.githubusercontent.com/103344273/170894890-55d77fc1-5b46-4972-8f2e-c14690b0719b.png)
+
+
+
 
