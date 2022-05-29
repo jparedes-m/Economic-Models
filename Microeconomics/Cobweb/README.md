@@ -43,7 +43,8 @@ and the intertemporal equilibrium quantity is:
 ```math
 Q^{*} = \alpha - \beta \frac{\alpha + \gamma}{\beta + \delta}
 ```
-Beware that if $`\delta > \beta`$, the price trajectory will be explosive,  and if $`\delta = \beta`$ the price dynamics will be oscillating ad infinitum, the only case where the price dynamics converge is when $`\delta < \beta`$.
+Beware that if $`\delta > \beta`$, the price trajectory will be explosive.
+Furthermore, if$`\delta = \beta`$ the price dynamics will be oscillating ad infinitum, the only case where the price dynamics converge is when $`\delta < \beta`$.
 
 As Alpha Chiang exemplifies:
 
