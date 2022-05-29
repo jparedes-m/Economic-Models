@@ -37,4 +37,9 @@ However, the intertemporal equilibrium price is defined as:
 ```math
 \bar{P}=\frac{\alpha + \gamma}{\beta + \delta}
 ```
+and the intertemporal equilibrium quantity is:
+
+```math
+\bar{Q} = \alpha - \beta \frac{\alpha + \gamma}{\beta + \delta}
+```
 
