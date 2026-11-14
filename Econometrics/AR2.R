@@ -12,7 +12,7 @@ nobs = 100 # number of observations
 ## e_t ~ N(0, sigma^2)
 
 ## So we need that y_t follows a stationary process (so roots of the characteristic polinomial are out of unitary circle)
-## The characteristic polinomial for this process is: 1 - b_1 -_b2. Make it equal to zero to find the roots. 
+## The characteristic polinomial for this process is: 1 - b_1 z -_b2 z^2. Make it equal to zero to find the roots. 
 
 ## Let
 b = matrix(c(
@@ -30,7 +30,10 @@ b[2] + b[3] < 1; b[3] - b[2] < 1; abs(b[3]) <1
 b[2]^2 + 4*b[3] < 0
 
 ## Generate y_t
-e_t = matrix(rnorm(nobs, 0, sqrt(sig2)), ncol = 1)
+e = matrix(rnorm(nobs, 0, sqrt(sig2)), ncol = 1)
 
 y = NULL; y[1] = b[1]; y[2] = b[1]
-y[3:nobs] = b[1] + b[2]*lag(y) + b[3]*lag(y, 2)
+for(t in 3:length(y)){
+    y[t] = b[1] + b[2] *lag(y,1) + b[3]*lag(y,2) + e
+}
+y
