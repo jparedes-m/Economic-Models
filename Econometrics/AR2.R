@@ -36,9 +36,10 @@ for(t in 3:(nobs+burn_in)){
 }
 y <- matrix(tail(y, nobs), ncol = 1)
 e <- matrix(tail(e, nobs), ncol = 1)
-rm(burn_in)
 
 coefs <- c("b_0" = b[1], "b_1" = b[2], "b_2" = b[3], "sigma^2" = sig2)
+
+rm(burn_in, b, sig2, e, t)
 
 # [2] OLS ----
 Y = tail(y, -2)
@@ -54,6 +55,8 @@ gamma_0_ols <- ((1-b_ols[3])*sig2_ols)/((1+b_ols[3])*( (1-b_ols[3])^2 -b_ols[2]^
 R2_ols <- 1- sig2_ols/gamma_0_ols
 
 coefs_ols <- c("b_0" = b_ols[1], "b_1" = b_ols[2], "b_2" = b_ols[3], "sigma^2" = sig2_ols)
+
+rm(x, e_ols, var_covar, gamma_0_ols)
 
 # [3] Maximum Likelihood ----
 ## This is the exact maximum likelihood
@@ -84,6 +87,8 @@ coefs_mle <- c("b_0" = opt$par[1], "b_1" = opt$par[2], "b_2" = opt$par[3], "sigm
 se_mle <- sqrt(diag(solve(opt$hessian)))
 gamma_0_hat <- ((1-opt$par[3])*opt$par[4])/((1+opt$par[3])*( (1-opt$par[3])^2 -opt$par[2]^2))
 R2_mle <- 1- opt$par[4]/gamma_0_hat
+
+rm(negll, opt, gamma_0_hat)
 
 # [4] Bayesian estimation ----
 
@@ -119,7 +124,9 @@ se_bayes <- apply(draws, 2, sd)                             # posterior sd
 gamma_0_g <- ((1-draws[,3])*draws[,4])/((1+draws[,3])*((1-draws[,3])^2 - draws[,2]^2))
 R2_bayes <- mean(1 - draws[,4]/gamma_0_g)                   # implied R2, averaged over draws
 
-# Comparison ----
+rm(G, burn, draws, lam, m, V, a, d, Vi, XX, XY, g, V1, m1, b_g, e_g, sig2_g, gamma_0_g, Y, sig2_ols)
+
+# [5] Comparison ----
 plot(1:nobs, y, type = 'l', col = 'black')
 lines(3:nobs, X%*%b_ols, col = 'red')
 lines(3:nobs, X%*%coefs_mle[1:3], col = 'blue')
@@ -129,4 +136,5 @@ fmt <- function(b, se) c(rbind(sprintf("%.3f", b), ifelse(is.na(se), "", sprintf
 tab <- cbind(Truth = fmt(coefs, NA), OLS = fmt(coefs_ols, c(se_ols, NA)), MLE = fmt(coefs_mle, se_mle), Bayes = fmt(coefs_bayes, se_bayes))
 rownames(tab) <- c(rbind(names(coefs), ""))
 print(tab, quote = FALSE)
-                                                                 
+
+# [End-of-file] ----
