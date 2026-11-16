@@ -125,5 +125,8 @@ lines(3:nobs, X%*%b_ols, col = 'red')
 lines(3:nobs, X%*%coefs_mle[1:3], col = 'blue')
 lines(3:nobs, X%*%coefs_bayes[1:3], col ='green')
 
-cbind(coefs, coefs_ols, coefs_mle, coefs_bayes)
+fmt <- function(b, se) c(rbind(sprintf("%.3f", b), ifelse(is.na(se), "", sprintf("(%.3f)", se))))  # coef row + (se) row
+tab <- cbind(Truth = fmt(coefs, NA), OLS = fmt(coefs_ols, c(se_ols, NA)), MLE = fmt(coefs_mle, se_mle), Bayes = fmt(coefs_bayes, se_bayes))
+rownames(tab) <- c(rbind(names(coefs), ""))
+print(tab, quote = FALSE)
                                                                  
