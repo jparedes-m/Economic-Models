@@ -2,8 +2,10 @@
 # Written by Jorge Paredes on Nov 2026. 
 
 # [0] Preamble ----
-library(dplyr)
+library(dplyr); library(ggplot2)
 nobs = 100 ; burn_in = 200
+set.seed(190799)
+R = 1000
 
 # [1] Data ----
 ## True parameters
@@ -31,7 +33,6 @@ sim_ar2 <- function(.beta, .T, .burn_in = 200){
     e <- matrix(tail(e, .T), ncol = 1)
     return(y)
 }
-set.seed(1907)
 y <- sim_ar2(.beta = coefs, .T = nobs)
 
 # [2] Estimation functions ----
@@ -46,6 +47,8 @@ est_ols <- function(.Y){
     sig2_hat <- as.numeric((t(residuals_hat) %*% residuals_hat)/(nrow(.X)-ncol(.X)))
     VCV <- sig2_hat * solve(t(.X) %*% .X)
     se_hat <- sqrt(diag(VCV))
+    se_sig2 <- sig2_hat * sqrt(2/(nrow(.X) - ncol(.X)))   # SE of sigma^2 under normal errors
+    se_hat <- c(se_hat, se_sig2)
 
     gamma_0_hat <- ((1-beta_hat[3])*sig2_hat)/((1+beta_hat[3])*( (1-beta_hat[3])^2 -beta_hat[2]^2))
     R2_hat <- 1- sig2_hat/gamma_0_hat
@@ -130,3 +133,55 @@ est_gibbs <- function(.Y,.draws = 10000, .burn_in = 1000, .lambda, .m, .V=NULL, 
 }
 
 # [3] Monte Carlo Simulation ----
+## Matrix preallocation
+ols_est <- ols_se <- matrix(data = NA, nrow = R, ncol = 4, dimnames = list(NULL, c("b_0", "b_1", "b_2", "sigma2")))
+mle_est <- mle_se <- matrix(data = NA, nrow = R, ncol = 4, dimnames = list(NULL, c("b_0", "b_1", "b_2", "sigma2")))
+gibbs_est <- gibbs_se <- matrix(data = NA, nrow = R, ncol = 4, dimnames = list(NULL, c("b_0", "b_1", "b_2", "sigma2")))
+times <- matrix(data = NA, nrow = R, ncol = 4, dimnames = list(NULL, c("replic", "ols", "mle", "gibbs")))
+
+## Comparison statistics
+MC_comp <- function(.est, .se, .coefs_truth = coefs){
+    truth <- matrix(rep(.coefs_truth, nrow(.est)), ncol = 4, byrow = TRUE, dimnames = list(NULL, c("b_0", "b_1", "b_2", "sigma2")))
+    errors <- .est - truth
+    stats <- rbind(
+        bias = colMeans(errors, na.rm = TRUE), 
+        sd = apply(.est, 2, sd, na.rm = TRUE), 
+        rmse = sqrt(colMeans(errors^2, na.rm =TRUE)),
+        avg_se = colMeans(.se, na.rm = TRUE), 
+        coverage = colMeans(abs(errors) <= 1.96 * .se, na.rm = TRUE)
+        )
+    colnames(stats) <- colnames(truth)
+    return(stats)
+}
+
+## MonteCarlo simulation
+sizes <- c(25, 50, 75, 100, 250)
+stats <- list(); times_all <- list()
+
+for(n in sizes){
+    for(r in 1:R){
+        # generate the data
+        y_r <- sim_ar2(coefs, n)
+        # estimation
+        ## OLS
+        t_ols <- system.time(ols <- est_ols(.Y = y_r))["elapsed"]
+        ols_est[r,] <- c(ols$betas, ols$sigma_2); ols_se[r,] <- ols$standard_errors
+        ## MLE
+        t_mle <- system.time(mle <- est_mle(.Y = y_r))["elapsed"]
+        mle_est[r,] <- c(mle$betas, mle$sigma_2); mle_se[r,] <- mle$standard_errors
+        ## Gibbs
+        t_gibbs <- system.time(gibbs <- est_gibbs(.Y = y_r, .lambda = 0.3, .m = c(0,1,0), .a = 0.01, .d = 0.01))["elapsed"]
+        gibbs_est[r,] <- c(gibbs$betas, gibbs$sigma_2); gibbs_se[r,] <- gibbs$standard_errors
+        ## Log
+        times[r,] <- c(r, t_ols, t_mle, t_gibbs)
+        cat(sprintf("n = %d | Replic: %d | OLS done in %.2f s | MLE done in %.2f s | Gibbs-Sample done in %.2f s | Total %.2f s |\n", n, r, t_ols, t_mle, t_gibbs, t_ols + t_mle + t_gibbs)); flush.console()
+    }
+    # Store results
+    stats[[paste0("n_", n)]] <- list(
+        OLS = MC_comp(.est = ols_est, .se = ols_se), 
+        MLE = MC_comp(.est = mle_est, .se = mle_se),
+        GIBBS = MC_comp(.est = gibbs_est, .se = gibbs_se)
+    )
+    times_all[[paste0("n_",n)]] <- times
+}
+
