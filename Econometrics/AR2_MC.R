@@ -2,14 +2,12 @@
 # Written by Jorge Paredes on Nov 2026. 
 
 # [0] Preamble ----
-library(ggplot2)
+library(ggplot2); library(parallel)
 nobs = 100 ; burn_in = 200
-set.seed(190799)
 R = 1000
 
 fig_dir <- "Econometrics/figures"; res_dir <- "Econometrics/results"
 dir.create(fig_dir, showWarnings = FALSE); dir.create(res_dir, showWarnings = FALSE)
-
 # [1] Data ----
 ## True parameters
 b = matrix(c(
@@ -135,6 +133,42 @@ est_gibbs <- function(.Y,.draws = 10000, .burn_in = 1000, .lambda, .m, .V=NULL, 
     return(list("betas" = as.numeric(colMeans(draws)[1:3]), "sigma_2" = mean(draws[,4]), "standard_errors" = apply(draws, 2, sd), "R2" = mean(1 - draws[,4]/gamma_0_g)))
 }
 
+## [2.4] Gibbs Sampling with steady-state prior
+est_gibbs_ss <- function(.Y, .Y_pre, .draws = 10000, .burn_in = 1000, .lambda, .m = c(1, 0), .a = 0.01, .d = 0.01, .infl = 2){
+    # Prior for the mean: centered on the pre-sample, inflated to avoid overconfidence
+    mu_0 <- mean(.Y_pre); s2_0 <- (.infl * sd(.Y_pre) / sqrt(length(.Y_pre)))^2
+    # Minnesota prior for the lags only (no intercept in this parametrization)
+    Vi <- solve(diag(c(.lambda^2, (.lambda/2)^2)))
+    # Data: y_t and its two lags
+    T <- length(.Y); y <- .Y[3:T]; y1 <- .Y[2:(T-1)]; y2 <- .Y[1:(T-2)]
+    # Set up
+    n_iters <- .draws + .burn_in
+    draws <- matrix(NA, n_iters, 4)
+    mu <- mean(.Y); sig2 <- est_ols(.Y)$sigma_2                                    # starting values
+
+    # Gibbs loop
+    for(i in 1:n_iters){
+        # (1) lags | mu, sig2: regression in deviations from mu, without constant
+        Z <- cbind(y1 - mu, y2 - mu); z <- y - mu
+        V1 <- solve(Vi + t(Z) %*% Z / sig2)
+        m1 <- V1 %*% (Vi %*% .m + t(Z) %*% z / sig2)
+        repeat{
+            b <- m1 + t(chol(V1)) %*% rnorm(2)
+            if (b[1] + b[2] < 1 & b[2] - b[1] < 1 & abs(b[2]) < 1) break # stationarity
+        }
+        # (2) mu | lags, sig2: w_t = mu * (1 - b_1 - b_2) + e_t
+        w <- y - b[1]*y1 - b[2]*y2; c_mu <- 1 - b[1] - b[2]
+        P <- 1/s2_0 + length(w) * c_mu^2 / sig2 # posterior precision
+        mu <- rnorm(1, (mu_0/s2_0 + c_mu * sum(w)/sig2) / P, sqrt(1/P))
+        # (3) sig2 | lags, mu
+        e <- (y - mu) - b[1]*(y1 - mu) - b[2]*(y2 - mu)
+        sig2 <- 1/rgamma(1, shape = .a + length(e)/2, rate = .d + sum(e^2)/2)
+        draws[i, ] <- c(mu * c_mu, b, sig2)   # store implied b_0 to compare with the others
+    }
+    draws <- draws[-(1:.burn_in), ]
+    return(list("betas" = colMeans(draws)[1:3], "sigma_2" = mean(draws[,4]), "standard_errors" = apply(draws, 2, sd)))
+}
+
 # [3] Monte Carlo Simulation ----
 ## Comparison statistics
 MC_comp <- function(.est, .se, .coefs_truth = coefs){
@@ -151,47 +185,48 @@ MC_comp <- function(.est, .se, .coefs_truth = coefs){
     return(stats)
 }
 
-## Matrix preallocation
-ols_est <- ols_se <- matrix(data = NA, nrow = R, ncol = 4, dimnames = list(NULL, c("b_0", "b_1", "b_2", "sigma2")))
-mle_est <- mle_se <- matrix(data = NA, nrow = R, ncol = 4, dimnames = list(NULL, c("b_0", "b_1", "b_2", "sigma2")))
-gibbs_est <- gibbs_se <- matrix(data = NA, nrow = R, ncol = 4, dimnames = list(NULL, c("b_0", "b_1", "b_2", "sigma2")))
-times <- matrix(data = NA, nrow = R, ncol = 4, dimnames = list(NULL, c("replic", "ols", "mle", "gibbs")))
-sizes <- c(25, 50, 75, 100, 250)
-stats <- list(); times_all <- list(); est_all <- list()
-
-for(n in sizes){
-    for(r in 1:R){
-        # generate the data
-        y_r <- sim_ar2(coefs, n)
-        # estimation
-        ## OLS
-        t_ols <- system.time(ols <- est_ols(.Y = y_r))["elapsed"]
-        ols_est[r,] <- c(ols$betas, ols$sigma_2); ols_se[r,] <- ols$standard_errors
-        ## MLE
-        t_mle <- system.time(mle <- est_mle(.Y = y_r))["elapsed"]
-        mle_est[r,] <- c(mle$betas, mle$sigma_2); mle_se[r,] <- mle$standard_errors
-        ## Gibbs
-        t_gibbs <- system.time(gibbs <- est_gibbs(.Y = y_r, .lambda = 0.3, .m = c(0,1,0), .a = 0.01, .d = 0.01))["elapsed"]
-        gibbs_est[r,] <- c(gibbs$betas, gibbs$sigma_2); gibbs_se[r,] <- gibbs$standard_errors
-        ## Log
-        times[r,] <- c(r, t_ols, t_mle, t_gibbs)
-        cat(sprintf("n = %d | Replic: %d | OLS done in %.2f s | MLE done in %.2f s | Gibbs-Sample done in %.2f s | Total %.2f s |\n", n, r, t_ols, t_mle, t_gibbs, t_ols + t_mle + t_gibbs)); flush.console()
+## Monte Carlo estimation ----
+### This is only one repetition
+## One replication: simulate, estimate with every method, return a table (methods x 8)
+pack <- function(fit) setNames(c(fit$betas, fit$sigma_2, fit$standard_errors), c("b_0", "b_1", "b_2", "sigma2", "se_b_0", "se_b_1", "se_b_2", "se_sigma2"))
+MC_est <- function(r, n, .lambdas, .n_pre = 20){
+    y_all <- sim_ar2(coefs, n + .n_pre)
+    y_pre <- y_all[1:.n_pre]; y_r <- y_all[-(1:.n_pre)] # pre-sample (prior only) + estimation sample
+    fits <- list(OLS = est_ols(y_r), MLE = est_mle(y_r))
+    for(l in .lambdas){
+        fits[[paste0("MN_", l)]] <- est_gibbs(y_r, .draws = 5000, .burn_in = 500, .lambda = l, .m = c(0, 1, 0), .a = 0.01, .d = 0.01)   # Minnesota
+        fits[[paste0("SS_", l)]] <- est_gibbs_ss(y_r, y_pre, .lambda = l) # steady-state
     }
-    # Store results
-    stats[[paste0("n_", n)]] <- list(
-        OLS = MC_comp(.est = ols_est, .se = ols_se), 
-        MLE = MC_comp(.est = mle_est, .se = mle_se),
-        GIBBS = MC_comp(.est = gibbs_est, .se = gibbs_se)
-    )
-    times_all[[paste0("n_",n)]] <- times
-    est_all[[paste0("n_", n)]] <- list(OLS = ols_est, MLE = mle_est, GIBBS = gibbs_est)
+    return(t(sapply(fits, pack)))
 }
+
+## Parallel set up: workers start empty, so send them the functions
+cl <- makeCluster(detectCores() - 1)
+clusterExport(cl, c("sim_ar2", "est_ols", "est_mle", "est_gibbs", "est_gibbs_ss", "pack", "coefs"))
+clusterSetRNGStream(cl, 190799)
+
+## Run
+lambdas <- c(0.05, 0.1, 0.2, 0.3, 0.5, 1, 5)
+sizes <- c(25, 50, 75, 100, 250)
+stats <- list(); est_all <- list()
+for(n in sizes){
+    t_0 <- Sys.time()
+    res <- parLapply(cl, 1:R, MC_est, n = n, .lambdas = lambdas) # R tables (methods x 8)
+    methods <- setNames(nm = rownames(res[[1]]))
+    est <- lapply(methods, function(m) t(sapply(res, function(x) x[m, 1:4]))) # R x 4 estimates per method
+    se  <- lapply(methods, function(m) t(sapply(res, function(x) x[m, 5:8]))) # R x 4 standard errors per method
+    # Store results
+    stats[[paste0("n_", n)]] <- Map(MC_comp, est, se)
+    est_all[[paste0("n_", n)]] <- est
+    cat(sprintf("n = %d done in %.1f min\n", n, as.numeric(difftime(Sys.time(), t_0, units = "mins"))))
+}
+stopCluster(cl)
+
 ## Save Monte Carlo output
-saveRDS(list(est = est_all, stats = stats, times = times_all, truth = coefs, R = R, sizes = sizes), file.path(res_dir, "AR2_MC_results.rds"))
+saveRDS(list(est = est_all, stats = stats, truth = coefs, R = R, sizes = sizes, lambdas = lambdas), file.path(res_dir, "AR2_MC_results.rds"))
+
 
 # [4] Monte Carlo results ----
-
-library(ggplot2)
 cols <- c(OLS = "#A52A2A", MLE = "#104E8B", GIBBS = "#556B2F")                    # one color per method, names as in est_all / stats
 pars <- colnames(est_all[[1]]$OLS); truth <- setNames(coefs, pars)
 plab <- c(b_0 = "b[0]", b_1 = "b[1]", b_2 = "b[2]", sigma2 = "sigma^2")            # plotmath labels
