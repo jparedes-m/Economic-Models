@@ -2,10 +2,13 @@
 # Written by Jorge Paredes on Nov 2026. 
 
 # [0] Preamble ----
-library(dplyr); library(ggplot2)
+library(ggplot2)
 nobs = 100 ; burn_in = 200
 set.seed(190799)
 R = 1000
+
+fig_dir <- "Econometrics/figures"; res_dir <- "Econometrics/results"
+dir.create(fig_dir, showWarnings = FALSE); dir.create(res_dir, showWarnings = FALSE)
 
 # [1] Data ----
 ## True parameters
@@ -133,12 +136,6 @@ est_gibbs <- function(.Y,.draws = 10000, .burn_in = 1000, .lambda, .m, .V=NULL, 
 }
 
 # [3] Monte Carlo Simulation ----
-## Matrix preallocation
-ols_est <- ols_se <- matrix(data = NA, nrow = R, ncol = 4, dimnames = list(NULL, c("b_0", "b_1", "b_2", "sigma2")))
-mle_est <- mle_se <- matrix(data = NA, nrow = R, ncol = 4, dimnames = list(NULL, c("b_0", "b_1", "b_2", "sigma2")))
-gibbs_est <- gibbs_se <- matrix(data = NA, nrow = R, ncol = 4, dimnames = list(NULL, c("b_0", "b_1", "b_2", "sigma2")))
-times <- matrix(data = NA, nrow = R, ncol = 4, dimnames = list(NULL, c("replic", "ols", "mle", "gibbs")))
-
 ## Comparison statistics
 MC_comp <- function(.est, .se, .coefs_truth = coefs){
     truth <- matrix(rep(.coefs_truth, nrow(.est)), ncol = 4, byrow = TRUE, dimnames = list(NULL, c("b_0", "b_1", "b_2", "sigma2")))
@@ -154,9 +151,13 @@ MC_comp <- function(.est, .se, .coefs_truth = coefs){
     return(stats)
 }
 
-## MonteCarlo simulation
+## Matrix preallocation
+ols_est <- ols_se <- matrix(data = NA, nrow = R, ncol = 4, dimnames = list(NULL, c("b_0", "b_1", "b_2", "sigma2")))
+mle_est <- mle_se <- matrix(data = NA, nrow = R, ncol = 4, dimnames = list(NULL, c("b_0", "b_1", "b_2", "sigma2")))
+gibbs_est <- gibbs_se <- matrix(data = NA, nrow = R, ncol = 4, dimnames = list(NULL, c("b_0", "b_1", "b_2", "sigma2")))
+times <- matrix(data = NA, nrow = R, ncol = 4, dimnames = list(NULL, c("replic", "ols", "mle", "gibbs")))
 sizes <- c(25, 50, 75, 100, 250)
-stats <- list(); times_all <- list()
+stats <- list(); times_all <- list(); est_all <- list()
 
 for(n in sizes){
     for(r in 1:R){
@@ -183,5 +184,60 @@ for(n in sizes){
         GIBBS = MC_comp(.est = gibbs_est, .se = gibbs_se)
     )
     times_all[[paste0("n_",n)]] <- times
+    est_all[[paste0("n_", n)]] <- list(OLS = ols_est, MLE = mle_est, GIBBS = gibbs_est)
 }
+## Save Monte Carlo output
+saveRDS(list(est = est_all, stats = stats, times = times_all, truth = coefs, R = R, sizes = sizes), file.path(res_dir, "AR2_MC_results.rds"))
 
+# [4] Monte Carlo results ----
+
+library(ggplot2)
+cols <- c(OLS = "#A52A2A", MLE = "#104E8B", GIBBS = "#556B2F")                    # one color per method, names as in est_all / stats
+pars <- colnames(est_all[[1]]$OLS); truth <- setNames(coefs, pars)
+plab <- c(b_0 = "b[0]", b_1 = "b[1]", b_2 = "b[2]", sigma2 = "sigma^2")            # plotmath labels
+
+## Sampling distributions
+xr <- sapply(pars, function(p) quantile(unlist(lapply(est_all, function(e) sapply(e, function(m) m[, p]))), c(0.005, 0.995), na.rm = TRUE))  # common x range per parameter
+grid <- expand.grid(n = names(est_all), parameter = pars, method = names(cols), stringsAsFactors = FALSE)
+dens <- do.call(rbind, Map(function(n, p, m) {
+    x <- na.omit(est_all[[n]][[m]][, p]); d <- density(x, from = xr[1, p], to = xr[2, p])
+    data.frame(n = paste("n =", sub("n_", "", n)), parameter = plab[[p]], method = m, x = d$x, y = d$y, mean = mean(x), truth = truth[[p]])
+}, grid$n, grid$parameter, grid$method))
+dens$y <- dens$y / ave(dens$y, dens$n, dens$parameter, FUN = max)                 # each panel peaks at 1, so rows can share the y axis
+dens$n <- factor(dens$n, unique(dens$n)); dens$parameter <- factor(dens$parameter, plab)
+
+ggplot(dens, aes(x, y, colour = method)) +
+    geom_line(linewidth = 0.8) +
+    geom_vline(data = unique(dens[c("n", "parameter", "truth")]), aes(xintercept = truth), linetype = "dashed", linewidth = 1) +   # true value
+    geom_segment(data = unique(dens[c("n", "parameter", "method", "mean")]), aes(x = mean, xend = mean, y = 0, yend = 0.12), linewidth = 1.2) +  # mean ticks
+    facet_grid(n ~ parameter, scales = "free_x", switch = "y", labeller = labeller(parameter = label_parsed)) + 
+    scale_colour_manual(values = cols, breaks = names(cols), labels = c("OLS", "MLE", "Gibbs")) +
+    labs(x = NULL, y = NULL, colour = NULL, caption = "Dashed line: true value. Ticks at base: mean of each estimator.") +
+    theme_minimal(base_size = 10) +
+    theme(legend.position = "bottom", axis.text.y = element_blank(), panel.grid = element_blank(), panel.border = element_rect(fill = NA, colour = "grey40"), strip.text = element_text(size = 11))
+ggsave(file.path(fig_dir, "fig_densities.png"), width = 10, height = 10, dpi = 160, bg = "white")
+
+## Performance
+perf <- do.call(rbind, lapply(names(stats), function(n) do.call(rbind, lapply(names(stats[[n]]), function(m) {
+    s <- stats[[n]][[m]]; tr <- abs(unname(coefs))
+    data.frame(n = sub("n_", "", n), method = m, parameter = colnames(s),
+               metric = rep(c("RMSPE (%)", "Bias (%)", "Coverage (%)"), each = ncol(s)),
+               value = c(100 * s["rmse", ] / tr, 100 * s["bias", ] / tr, 100 * s["coverage", ]))
+}))))
+perf <- within(perf, {
+    n <- factor(n, sub("n_", "", names(stats)))
+    method <- factor(method, names(cols), c("OLS", "MLE", "Gibbs"))
+    metric <- factor(metric, c("RMSPE (%)", "Bias (%)", "Coverage (%)"))
+    parameter <- factor(parameter, pars, c("b[0]", "b[1]", "b[2]", "sigma^2"))
+})
+
+ggplot(perf, aes(n, value, fill = method)) +
+    geom_col(position = position_dodge(0.8), width = 0.75) +
+    geom_hline(data = data.frame(metric = factor(c("Bias (%)", "Coverage (%)"), levels(perf$metric)), y = c(0, 95)),
+               aes(yintercept = y), linetype = "dashed", linewidth = 0.6, colour = "grey20") +       # zero bias, nominal 95%
+    facet_grid(metric ~ parameter, scales = "free_y", switch = "y", labeller = labeller(parameter = label_parsed)) +
+    scale_fill_manual(values = unname(cols)) +
+    labs(x = "Sample size (n)", y = NULL, fill = NULL) +
+    theme_minimal(base_size = 11) +
+    theme(legend.position = "bottom", strip.placement = "outside", panel.grid.major.x = element_blank(), panel.grid.minor = element_blank())
+ggsave(file.path(fig_dir, "fig_performance.png"), width = 11, height = 7.5, dpi = 160, bg = "white")
